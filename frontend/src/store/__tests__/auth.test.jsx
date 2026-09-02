@@ -688,7 +688,7 @@ describe('useAuthStore', () => {
 
   describe('proxyLogin', () => {
     beforeEach(() => {
-      sessionStorage.clear();
+      useAuthStore.setState({ proxyAuthOptOut: false });
     });
 
     it('should store the tokens returned for a proxy-asserted identity', async () => {
@@ -727,6 +727,30 @@ describe('useAuthStore', () => {
       });
 
       expect(signedIn).toBe(false);
+    });
+
+    it('should sign in again once the page reloads after an explicit logout', async () => {
+      API.logout.mockResolvedValue();
+      API.proxyLogin.mockResolvedValue({
+        access: createMockToken(),
+        refresh: 'proxy-refresh-token',
+      });
+
+      const { result } = renderHook(() => useAuthStore());
+
+      await act(async () => {
+        await result.current.logout({ explicit: true });
+      });
+
+      // A reload rebuilds the store, which is what clears the opt-out.
+      useAuthStore.setState({ proxyAuthOptOut: false });
+
+      let signedIn;
+      await act(async () => {
+        signedIn = await result.current.proxyLogin();
+      });
+
+      expect(signedIn).toBe(true);
     });
 
     it('should not sign the user back in after an explicit logout', async () => {

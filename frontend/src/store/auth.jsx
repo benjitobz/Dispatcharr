@@ -24,8 +24,6 @@ const isTokenExpired = (expirationTime) => {
   return now >= expirationTime;
 };
 
-const PROXY_AUTH_OPT_OUT_KEY = 'proxyAuthOptOut';
-
 const storeTokens = (set, response) => {
   const expiration = decodeToken(response.access);
   set({
@@ -43,6 +41,7 @@ const useAuthStore = create((set, get) => ({
   isInitialized: false,
   isInitializing: false,
   isCheckingAuth: true,
+  proxyAuthOptOut: false,
   user: {
     username: '',
     email: '',
@@ -194,7 +193,7 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await API.login(username, password);
       if (response.access) {
-        sessionStorage.removeItem(PROXY_AUTH_OPT_OUT_KEY);
+        set({ proxyAuthOptOut: false });
         storeTokens(set, response);
 
         // Don't start background loading here - let it happen after app initialization
@@ -205,7 +204,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   proxyLogin: async () => {
-    if (sessionStorage.getItem(PROXY_AUTH_OPT_OUT_KEY)) {
+    if (get().proxyAuthOptOut) {
       return false;
     }
 
@@ -243,9 +242,11 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  // Opting out lasts until the page is reloaded: an explicit logout should show
+  // the login form, but a later visit signs in through the proxy again.
   logout: async ({ explicit = false } = {}) => {
     if (explicit) {
-      sessionStorage.setItem(PROXY_AUTH_OPT_OUT_KEY, '1');
+      set({ proxyAuthOptOut: true });
     }
 
     // Call backend logout endpoint to log the event
