@@ -685,4 +685,109 @@ describe('useAuthStore', () => {
       expect(fetchChannelIdsSpy).toHaveBeenCalled();
     });
   });
+
+  describe('proxyLogin', () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it('should store the tokens returned for a proxy-asserted identity', async () => {
+      const mockToken = createMockToken();
+      API.proxyLogin.mockResolvedValue({
+        access: mockToken,
+        refresh: 'proxy-refresh-token',
+      });
+
+      const { result } = renderHook(() => useAuthStore());
+
+      let signedIn;
+      await act(async () => {
+        signedIn = await result.current.proxyLogin();
+      });
+
+      expect(signedIn).toBe(true);
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+        'accessToken',
+        mockToken
+      );
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+        'refreshToken',
+        'proxy-refresh-token'
+      );
+    });
+
+    it('should report failure when the proxy asserted nothing', async () => {
+      API.proxyLogin.mockResolvedValue(null);
+
+      const { result } = renderHook(() => useAuthStore());
+
+      let signedIn;
+      await act(async () => {
+        signedIn = await result.current.proxyLogin();
+      });
+
+      expect(signedIn).toBe(false);
+    });
+
+    it('should not sign the user back in after an explicit logout', async () => {
+      API.logout.mockResolvedValue();
+      API.proxyLogin.mockResolvedValue({
+        access: createMockToken(),
+        refresh: 'proxy-refresh-token',
+      });
+
+      const { result } = renderHook(() => useAuthStore());
+
+      await act(async () => {
+        await result.current.logout({ explicit: true });
+      });
+
+      let signedIn;
+      await act(async () => {
+        signedIn = await result.current.proxyLogin();
+      });
+
+      expect(signedIn).toBe(false);
+      expect(API.proxyLogin).not.toHaveBeenCalled();
+    });
+
+    it('should still sign in after a session-expiry logout', async () => {
+      API.logout.mockResolvedValue();
+      API.proxyLogin.mockResolvedValue({
+        access: createMockToken(),
+        refresh: 'proxy-refresh-token',
+      });
+
+      const { result } = renderHook(() => useAuthStore());
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      let signedIn;
+      await act(async () => {
+        signedIn = await result.current.proxyLogin();
+      });
+
+      expect(signedIn).toBe(true);
+    });
+
+    it('should be attempted by initializeAuth when no refresh token exists', async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      API.proxyLogin.mockResolvedValue({
+        access: createMockToken(),
+        refresh: 'proxy-refresh-token',
+      });
+
+      const { result } = renderHook(() => useAuthStore());
+
+      let initialized;
+      await act(async () => {
+        initialized = await result.current.initializeAuth();
+      });
+
+      expect(initialized).toBe(true);
+      expect(API.proxyLogin).toHaveBeenCalled();
+    });
+  });
 });

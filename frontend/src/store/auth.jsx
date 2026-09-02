@@ -24,6 +24,20 @@ const isTokenExpired = (expirationTime) => {
   return now >= expirationTime;
 };
 
+const PROXY_AUTH_OPT_OUT_KEY = 'proxyAuthOptOut';
+
+const storeTokens = (set, response) => {
+  const expiration = decodeToken(response.access);
+  set({
+    accessToken: response.access,
+    refreshToken: response.refresh,
+    tokenExpiration: expiration,
+  });
+  localStorage.setItem('accessToken', response.access);
+  localStorage.setItem('refreshToken', response.refresh);
+  localStorage.setItem('tokenExpiration', expiration);
+};
+
 const useAuthStore = create((set, get) => ({
   isAuthenticated: false,
   isInitialized: false,
@@ -180,22 +194,28 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await API.login(username, password);
       if (response.access) {
-        const expiration = decodeToken(response.access);
-        set({
-          accessToken: response.access,
-          refreshToken: response.refresh,
-          tokenExpiration: expiration, // 1 hour from now
-        });
-        // Store in localStorage
-        localStorage.setItem('accessToken', response.access);
-        localStorage.setItem('refreshToken', response.refresh);
-        localStorage.setItem('tokenExpiration', expiration);
+        sessionStorage.removeItem(PROXY_AUTH_OPT_OUT_KEY);
+        storeTokens(set, response);
 
         // Don't start background loading here - let it happen after app initialization
       }
     } catch (error) {
       console.error('Login failed:', error);
     }
+  },
+
+  proxyLogin: async () => {
+    if (sessionStorage.getItem(PROXY_AUTH_OPT_OUT_KEY)) {
+      return false;
+    }
+
+    const response = await API.proxyLogin();
+    if (!response) {
+      return false;
+    }
+
+    storeTokens(set, response);
+    return true;
   },
 
   // Action to refresh the token
@@ -223,8 +243,11 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  // Action to logout
-  logout: async () => {
+  logout: async ({ explicit = false } = {}) => {
+    if (explicit) {
+      sessionStorage.setItem(PROXY_AUTH_OPT_OUT_KEY, '1');
+    }
+
     // Call backend logout endpoint to log the event
     try {
       await API.logout();
@@ -258,7 +281,8 @@ const useAuthStore = create((set, get) => ({
       }
     }
 
-    return false;
+    set({ isCheckingAuth: true });
+    return await get().proxyLogin();
   },
 }));
 
